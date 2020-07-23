@@ -24,5 +24,9 @@
 	1. `flumecli.py --query --tokenfile <pathtofile>` **Simple query with output to stdout showing timestamp and water flow from last minute**
 	2. `flumecli.py --query --tokenfile <pathtofile> --logfile <pathtologfile>` **Same output as above, except the output gets appended to the specified file**
 	3. `flumecli.py --query --tokenfile <pathtofile> --hecurl <full hec url> --hectoken <hec token>` **Outputs the value directly to HEC**
-
+4. Query the flume API for several days (YYYY-MM-DD format). This will retrieve all data, per minute, from 00:00:00 to 23:59:00 each day listed.  Each day is two queries split into 12 hour segments.
+	1. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-01 --tokenfile <pathtofile>` **Simple query with output to stdout showing timestamp and water flow for the day**
+	2. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-02 --tokenfile <pathtofile> --logfile <pathtologfile>` **Same output as above, except the output gets appended to the specified file**
+	3. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-02 --tokenfile <pathtofile> --logfile <pathtologfile> --DBfile <DB name> --DBtable <DB table>` **Same output as above, except the output gets appended to the specified tinyDB and table.**
+	4. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-02 --tokenfile <pathtofile> --hecurl <full hec url> --hectoken <hec token>` **Outputs the value directly to HEC**
 ## Read the --help on the command line.  There are some other options available.
