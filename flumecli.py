@@ -1,11 +1,11 @@
-import requests
 import datetime
 import argparse
 import json
 import jwt
+import requests
+from tinydb import TinyDB
 
 config = {}
-
 
 def checkparams():
     parser = argparse.ArgumentParser(description="Utility for exporting Flume data")
@@ -18,22 +18,25 @@ def checkparams():
 
     parser.add_argument("--hecurl", help="Full HEC URL.  e.g. - 'http://172.16.1.2:8088' or 'https://hec.mysplunklab.com:443'")
     parser.add_argument("--hectoken", help="HEC token")
-    parser.add_argument("--hecindex", help="Destination HEC index" )
+    parser.add_argument("--hecindex", help="Destination HEC index")
     parser.add_argument("--hecsourcetype", help="Destination HEC sourcetype")
-
 
     parser.add_argument("--tokenfile", help="Token details file.  This file will be written to when in --auth mode.  This file will be read from for all other modes.")
     parser.add_argument("--logfile", help="Logfile to write query data to.  If this parameter is not specified, the query data will go to stdout.")
+    parser.add_argument("--DBfile", help="Append TinyDB table with records, e.g. - db2.json")
+    parser.add_argument("--DBtable", help="Name of table for database, e.g. - H2O_Usage_in_gallon")
+    parser.add_argument("--startDate", type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d'), help="Enter start date in YYYY-MM-DD format")
+    parser.add_argument("--endDate", type=lambda s: datetime.datetime.strptime(s, '%Y-%m-%d'), help="Enter end date in YYYY-MM-DD format")
 
     parser.add_argument("--verbose", "-v", help="Add verbosity", action="store_true")
+    parser.add_argument("--interval", "-t", help="How frequently should Flume be contacted", action="store_true")
 
     action_group = parser.add_mutually_exclusive_group()
     action_group.add_argument("--auth", help="Obtain authentication token", action="store_true")
     action_group.add_argument("--renew", help="Renew auth token", action="store_true")
     action_group.add_argument("--details", help="Get important metadata about your Flume account", action="store_true")
     action_group.add_argument("--query", help="Query water usage for last minute", action="store_true")
-
-    
+    action_group.add_argument("--getBulkData", help="Query water usage over a series of day(s)", action="store_true")
 
     args = parser.parse_args()
 
@@ -47,14 +50,18 @@ def checkparams():
     config["hecsourcetype"] = args.hecsourcetype
     config["tokenfile"] = args.tokenfile
     config["logfile"] = args.logfile
+    config["appendDB"] = args.DBfile
+    config["table"] = args.DBtable
+    config["startDate"] = args.startDate
+    config["endDate"] = args.endDate
     config["verbose"] = args.verbose
+    config["interval"] = args.interval
 
-        
     if args.auth: config["mode"] = "auth"
     if args.details: config["mode"] = "details"
     if args.query: config["mode"] = "query"
     if args.renew: config["mode"] = "renew"
-    
+    if args.getBulkData: config["mode"] = "getBulkData"
     return config
 
 def obtainCredentials(config):
@@ -85,23 +92,21 @@ def obtainCredentials(config):
                 f.write(json.dumps(outline))
                 f.close()
         else:
-            quit("failed to obtain creds")    
+            quit("failed to obtain creds")
 
 
 def renewCredentials(config):
     url = "https://api.flumetech.com/oauth/token"
     payload = '{"grant_type":"refresh_token", "refresh_token":"' + config["refresh_token"] + '", "client_id":"' + config["clientid"] + '", "client_secret":"' + config["clientsecret"] + '"}'
     print(payload)
-    headers = {'content-type': 'application/json'}    
+    headers = {'content-type': 'application/json'}
     resp = requests.request("POST", url, data=payload, headers=headers)
     dataJSON = json.loads(resp.text)
     print(dataJSON)
 
 
-
-
 def loadCredentials(config):
-    if not config["tokenfile"]: 
+    if not config["tokenfile"]:
         quit("You have to provide a token file")
     else:
         if config["verbose"]: print("Reading token info from: " + config["tokenfile"])
@@ -112,17 +117,14 @@ def loadCredentials(config):
         config["access_token"] = token["access_token"]
         config["refresh_token"] = token["refresh_token"]
 
-
-
 def buildRequestHeader():
     header = {"Authorization": "Bearer " + config["access_token"]}
     return header
 
-
 def testAuthorizationToken():
     resp = requests.request('GET', "https://api.flumetech.com/users/11382", headers=buildRequestHeader())
     #print(resp.text);
-    dataJSON = json.loads(resp.text) 
+    dataJSON = json.loads(resp.text)
     return dataJSON["http_code"] == 200
 
 def previousminute():
@@ -132,54 +134,115 @@ def currentminute():
     #return (datetime.datetime.now() - datetime.timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S');
     return (datetime.datetime.now()).strftime('%Y-%m-%d %H:%M:%S');
 
-
 def getUserID(config):
     if config["verbose"]: print("Getting user ID from JWT")
     decoded = jwt.decode(config["access_token"], verify=False)
     config["user_id"] = decoded["user_id"]
-    if config["verbose"]: 
+    if config["verbose"]:
         print("JWT Details: ")
         print(decoded)
+
+def calculateTimes(startTime, endTime, interval):
+    if interval == "1":
+        max_requests = 1200
+    diff = endTime - startTime
+    if diff >= datetime.timedelta(hours=20):
+        endTime = startTime + datetime.timedelta(hours=19,minutes=59)
+        endTime = (endTime).strftime("%Y-%m-%d %H:%M:%S")
+        return endTime
+    else:
+        return endTime
 
 def getDevices(config):
     if config["verbose"]: print("Getting devices")
     resp = requests.request('GET', 'https://api.flumetech.com/users/' + str(config["user_id"]) + '/devices', headers=buildRequestHeader())
-    
     dataJSON = json.loads(resp.text)
-    
+    if dataJSON["http_code"] == 401:
+        obtainCredentials(config)
     if config["verbose"]: print("Executed device search")
-    
     if dataJSON["http_code"] == 200:
         for bridge in dataJSON["data"]:
-            if config["verbose"]: 
+            if config["verbose"]:
                 print("JSON Data from device")
                 print(dataJSON["data"])
             if bridge["type"] == 2:
                 config["device_id"] = bridge["id"]
 
-
 def getWaterFlowLastMinute():
     payload = '{"queries":[{"request_id":"perminute","bucket":"MIN","since_datetime":"' + previousminute() + '","until_datetime":"' + currentminute() + '","group_multiplier":"1","operation":"SUM","sort_direction":"ASC","units":"GALLONS"}]}'
-    #print(payload)
     headers = buildRequestHeader();
     headers["content-type"] = "application/json"
     resp = requests.request("POST", "https://api.flumetech.com/users/" + str(config["user_id"])  + "/devices/" + str(config["device_id"])  + "/query", data=payload, headers=headers)
     data = json.loads(resp.text)
-    #print(data)
-    if data["http_code"]==200:
+    if data["http_code"] == 200:
         return data["data"][0]["perminute"][0]["value"]
     else:
         return None
 
+def append_db(rawdata, newdate=""):
+    DB = TinyDB(config["appendDB"])
+    WATER_USAGE_TABLE = DB.table(config["table"])
+    for ampm in rawdata:
+        print("Adding {} records ...".format(len(ampm)))
+        for entry in ampm:
+            entrydate = entry['datetime'][0:10]
+            entrytime = entry['datetime'][11:19]
+            entryusage = entry['value']
+            WATER_USAGE_TABLE.insert({"date":entrydate, "time": entrytime, "gallons": entryusage})
+    return
+
+def getBulkData():
+    startDate = config["startDate"]
+    endDate = config["endDate"]
+    delta = endDate - startDate
+    data = []
+    for i in range(delta.days + 1):
+        day = startDate + datetime.timedelta(days=i)
+        eventStartDate1 = day.strftime("%Y-%m-%d 00:00:00") # startTime
+        eventEndDate1 = day.strftime("%Y-%m-%d 11:59:00")  # endTime, 19:59:00 is the latest possible time.
+        eventStartDate2 = day.strftime("%Y-%m-%d 12:00:00") # startTime
+        eventEndDate2 = day.strftime("%Y-%m-%d 24:00:00") # endTime
+        payload1 = '{"queries":[{"request_id":"perminute","bucket":"MIN","since_datetime":"' + eventStartDate1 + '","until_datetime":"' + eventEndDate1 + '","group_multiplier":"1","sort_direction":"ASC","units":"GALLONS"}]}'
+        payload2 = '{"queries":[{"request_id":"perminute","bucket":"MIN","since_datetime":"' + eventStartDate2 + '","until_datetime":"' + eventEndDate2 + '","group_multiplier":"1","sort_direction":"ASC","units":"GALLONS"}]}'
+        headers = buildRequestHeader();
+        headers["content-type"] = "application/json"
+        resp1 = requests.request("POST", "https://api.flumetech.com/users/" + str(config["user_id"])  + "/devices/" + str(config["device_id"])  + "/query", data=payload1, headers=headers)
+        resp2 = requests.request("POST", "https://api.flumetech.com/users/" + str(config["user_id"])  + "/devices/" + str(config["device_id"])  + "/query", data=payload2, headers=headers)
+        data1 = json.loads(resp1.text)
+        data2 = json.loads(resp2.text)
+        if (data1["http_code"] == 200) and (data2["http_code"] == 200):
+            data.append(data1["data"][0]["perminute"])
+            data.append(data2["data"][0]["perminute"])
+        elif (data1["http_code"] == 429) and (data2["http_code"] == 429):
+            print(data1["detailed"])
+            break
+        elif (data1["http_code"] == 429):
+            print(data1["detailed"])
+            break
+        else:
+            data.append(data1["data"][0]["perminute"])
+            return data
+    return data
+
+
 
 def transmitFlow(flowValue):
-    if(config["logfile"]):
+    if (config["mode"] == "getBulkData") and (config["logfile"]):
         if config["verbose"]: print("Sending value to " + config["logfile"] + ":" + str(flowValue))
         f = open(config["logfile"], "a")
-        f.write(currentminute() + ": " + str(flowValue) + "\n\r")
+        for datasetchunk in flowValue:
+            f.write(str(datasetchunk) + "\n")
+        f.close()
+    elif(config["logfile"]):
+        if config["verbose"]: print("Sending value to " + config["logfile"] + ":" + str(flowValue))
+        f = open(config["logfile"], "a")
+        f.write(currentminute() + ", " + str(flowValue) + "\n")
         f.close()
     else:
-        print(currentminute() + ": " + str(flowValue))
+        print(currentminute() + ", " + str(flowValue))
+
+    if config["appendDB"]:
+        append_db(flowValue)
 
     if config["hecurl"] and config["hectoken"]:
         if config["verbose"]: print("HEC defined, sending to splunk HEC")
@@ -192,7 +255,7 @@ def transmitFlow(flowValue):
         result = json.loads(resp.text)
 
         if result["text"] == 'Success':
-            if config["verbose"]: print("Successfully posted to hEC")
+            if config["verbose"]: print("Successfully posted to HEC")
         else:
             if config["verbose"]: print("Failed to send to HEC")
 
@@ -215,14 +278,17 @@ def main():
         print("Access Token: " + config["access_token"])
         print("Refresh Token: " + config["refresh_token"])
         print("User ID: " + str(config["user_id"]))
-        print("Device ID: " + config["device_id"])
 
     if config["mode"] == "query":
-        loadCredentials(config);
+        loadCredentials(config)
         getUserID(config)
-        getDevices(config)    
+        getDevices(config)
         transmitFlow(getWaterFlowLastMinute())
 
+    if config["mode"] == "getBulkData":
+        loadCredentials(config)
+        getUserID(config)
+        getDevices(config)
+        transmitFlow(getBulkData())
 
-    
 main()
