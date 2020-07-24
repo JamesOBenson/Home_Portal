@@ -6,14 +6,14 @@ import requests
 from tinydb import TinyDB
 import config
 
-API_KEY = config.ENPHASE_API_ID
+API_KEY = config.ENPHASE_API_KEY
 API_ID = config.ENPHASE_API_ID
 USER_ID = config.ENPHASE_USER_ID
 SITE_ID = config.ENPHASE_SITE_ID
 DATA_BASE = config.ENPHASE_DATABASE
 DATA_BASE_GEN_TABLE = config.ENPHASE_DATABASE_GEN_TABLE
 DATA_BASE_CONS_TABLE = config.ENPHASE_DATABASE_CONS_TABLE
-URL = config.ENPHASE_URL
+#URL = config.ENPHASE_URL
 
 def generate_epoch(mytime):
     mytime = datetime.strptime(mytime, "%Y-%m-%d").timestamp()
@@ -165,5 +165,5 @@ DB = TinyDB(DATA_BASE)
 GENERATION_TABLE = DB.table(DATA_BASE_GEN_TABLE)
 CONSUMPTION_TABLE = DB.table(DATA_BASE_CONS_TABLE)
 
-#main("generation", event_start_date='2020-07-01', event_end_date='2020-07-13')
-main("consumption", event_start_date='2020-06-01', event_end_date='2020-07-01')
+#main("generation", event_start_date='2020-07-14', event_end_date='2020-07-14')
+main("consumption", event_start_date='2020-07-01', event_end_date='2020-07-02')
