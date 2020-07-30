@@ -1,3 +1,5 @@
 flume.token
 config.py
 db2.json
+mytoken
+tokenFile
