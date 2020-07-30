@@ -3,3 +3,6 @@ config.py
 db2.json
 mytoken
 tokenFile
+creds
+config.py
+config.py
