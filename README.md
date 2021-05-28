@@ -26,3 +26,9 @@
 	2. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-02 --tokenfile <pathtofile> --logfile <pathtologfile>` **Same output as above, except the output gets appended to the specified file**
 	3. `flumecli.py --getBulkData --startDate 2020-07-01 --endDate 2020-07-02 --tokenfile <pathtofile> --logfile <pathtologfile> --DBfile <DB name> --DBtable <DB table>` **Same output as above, except the output gets appended to the specified tinyDB and table.**
 ## Read the --help on the command line.  There are some other options available.
+
+## TL;DR
+1. Update credentials in the `local_credentials.py` file
+2. `python3 flumecli.py --auth`
+3. `python3 flumecli.py --getBulkData --startDate 2021-01-15`
+4. `python3 flumecli.py --getBulkData --startDate 2021-01-15 --endDate 2021-02-01`
