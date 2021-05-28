@@ -1,0 +1,6 @@
+datetime~=4.3
+argparse~=1.4.0
+jwt~=1.2.0
+requests~=2.25.1
+TinyDB~=4.4.0
+PyJWT~=1.7.1

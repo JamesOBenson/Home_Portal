@@ -1,7 +1,4 @@
 flume.token
-tokenFile
-mytoken
-config.py
-creds
+flume.log
+local_credentials.py
 db2.json
-
